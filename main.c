@@ -169,6 +169,11 @@ void usage(const char *cmd, const char *alphabet, const size_t max_len, const ch
 
 int main(int argc, char **argv) {
 
+	if (argc > 1 && strcmp(argv[1], "--version") == 0) {
+		printf("jwtcrack version 1.0.0\n");
+		return 0;
+	}
+
 	const EVP_MD *evp_md;
 	size_t max_len = 6;
 	
