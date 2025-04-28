@@ -1,0 +1,22 @@
+FROM frolvlad/alpine-gcc:latest
+# Update packages to get latest security fixes for OpenSSL (CVE-2025-9230, CVE-2025-9231, CVE-2025-9232)
+RUN apk update && apk upgrade --no-cache && apk add --quiet --no-cache libressl-dev make valgrind bash coreutils
+
+# Create non-root user for security (AVD-DS-0002)
+RUN addgroup -S testgroup && adduser -S testuser -G testgroup
+
+COPY ./*.h /opt/src/
+COPY ./*.c /opt/src/
+COPY Makefile /opt/src/
+COPY test_security.sh /opt/src/
+
+WORKDIR /opt/src
+
+# Build with debug symbols for better Valgrind output
+RUN make CFLAGS="-g -O0"
+RUN chmod +x /opt/src/test_security.sh
+RUN chown -R testuser:testgroup /opt/src
+
+USER testuser
+
+CMD ["/opt/src/test_security.sh"]

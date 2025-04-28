@@ -1,13 +1,26 @@
-FROM n0madic/alpine-gcc:9.2.0
-RUN apk add --quiet --no-cache libressl-dev 
+FROM frolvlad/alpine-gcc:latest
+# Update packages to get latest security fixes for OpenSSL (CVE-2025-9230, CVE-2025-9231, CVE-2025-9232)
+RUN apk update && apk upgrade --no-cache && apk add --quiet --no-cache libressl-dev make
+
+# Create non-root user and group
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+
 COPY ./*.h /opt/src/
 COPY ./*.c /opt/src/
 COPY Makefile /opt/src/
 COPY entrypoint.sh /
-#RUN apt-get install libssl-dev
+
 WORKDIR /opt/src
+# Note: Only need one make command on Alpine Linux (macOS paths removed)
 RUN make
-RUN make OPENSSL=/usr/local/opt/openssl/include OPENSSL_LIB=-L/usr/local/opt/openssl/lib
 RUN ["chmod", "+x", "/entrypoint.sh"]
 RUN ["chmod", "+x", "/opt/src/jwtcrack"]
+
+# Change ownership to non-root user
+RUN chown -R appuser:appgroup /opt/src /entrypoint.sh
+
+USER appuser
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 CMD ["/opt/src/jwtcrack", "--version"] || exit 1
+
 ENTRYPOINT ["/entrypoint.sh"]

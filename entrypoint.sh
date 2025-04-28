@@ -1,2 +1,2 @@
-#!/bin/bash
-/opt/src/jwtcrack $@
+#!/bin/sh
+/opt/src/jwtcrack "$@"

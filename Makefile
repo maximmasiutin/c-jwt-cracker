@@ -3,7 +3,7 @@ CC	= gcc
 OPENSSL = /usr/include/openssl
 OPENSSL_LIB = -lssl
 
-CFLAGS	+= -I $(OPENSSL) -g -std=gnu99 -O3
+CFLAGS	+= -I $(OPENSSL) -g -std=gnu99 -O3 -march=native -mtune=native
 LDFLAGS	+= $(OPENSSL_LIB) -lcrypto -lpthread
 
 NAME	= jwtcrack

@@ -10,6 +10,8 @@ see the "README.md" file for more details.
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
+#include <stdatomic.h>
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
 #include <stdbool.h>
@@ -35,7 +37,20 @@ size_t g_to_encrypt_len = 0;
 char *g_alphabet = NULL;
 size_t g_alphabet_len = 0;
 
-char *g_found_secret = NULL;
+// Use atomic pointer to prevent race condition (CWE-362)
+_Atomic(char *) g_found_secret = NULL;
+
+/**
+ * Constant-time memory comparison to prevent timing side-channel attacks (CWE-208).
+ * Returns 0 if equal, non-zero otherwise.
+ */
+static int constant_time_compare(const unsigned char *a, const unsigned char *b, size_t len) {
+    unsigned char result = 0;
+    for (size_t i = 0; i < len; i++) {
+        result |= a[i] ^ b[i];
+    }
+    return result;
+}
 
 struct s_thread_data {
     const EVP_MD *g_evp_md; // The hash function to apply the HMAC to
@@ -51,15 +66,29 @@ struct s_thread_data {
     size_t max_len; // And tries combinations up to a certain length
 };
 
-void init_thread_data(struct s_thread_data *data, char starting_letter, size_t max_len, const EVP_MD *evp_md) {
+/**
+ * Initialize thread data. Returns 0 on success, -1 on memory allocation failure.
+ */
+int init_thread_data(struct s_thread_data *data, char starting_letter, size_t max_len, const EVP_MD *evp_md) {
     data->max_len = max_len;
     data->starting_letter = starting_letter;
-// The chosen hash function for HMAC
     data->g_evp_md = evp_md;
+    data->g_result = NULL;
+    data->g_buffer = NULL;
+
     // Allocate the buffer used to hold the calculated signature
     data->g_result = malloc(EVP_MAX_MD_SIZE);
+    if (data->g_result == NULL) {
+        return -1;
+    }
     // Allocate the buffer used to hold the generated key
     data->g_buffer = malloc(max_len + 1);
+    if (data->g_buffer == NULL) {
+        free(data->g_result);
+        data->g_result = NULL;
+        return -1;
+    }
+    return 0;
 }
 
 void destroy_thread_data(struct s_thread_data *data) {
@@ -68,14 +97,15 @@ void destroy_thread_data(struct s_thread_data *data) {
 }
 
 /**
- * Check if the signature produced with "secret
- * of size "secrent_len" (without the '\0') matches the original
+ * Check if the signature produced with "secret"
+ * of size "secret_len" (without the '\0') matches the original
  * signature.
  * Return true if it matches, false otherwise
  */
 bool check(struct s_thread_data *data, const char *secret, size_t secret_len) {
     // If the secret was found by another thread, stop this thread
-    if (g_found_secret != NULL) {
+    // Use atomic load to prevent race condition (CWE-362)
+    if (atomic_load_explicit(&g_found_secret, memory_order_relaxed) != NULL) {
         destroy_thread_data(data);
         pthread_exit(NULL);
     }
@@ -89,15 +119,15 @@ bool check(struct s_thread_data *data, const char *secret, size_t secret_len) {
 	);
 
 	// Compare the computed hash to the given decoded base64 signature.
-	// If there is a match, we just found the key.
-	return memcmp(data->g_result, g_signature, g_signature_len) == 0;
+	// Use constant-time comparison to prevent timing side-channel attacks (CWE-208).
+	return constant_time_compare(data->g_result, g_signature, g_signature_len) == 0;
 }
 
 bool brute_impl(struct s_thread_data *data, char* str, int index, int max_depth)
 {
     for (int i = 0; i < g_alphabet_len; ++i)
     {
-        // The character at "index" in "str" successvely takes the value
+        // The character at "index" in "str" successively takes the value
         // of each symbol in the alphabet
         str[index] = g_alphabet[i];
 
@@ -125,21 +155,43 @@ bool brute_impl(struct s_thread_data *data, char* str, int index, int max_depth)
 }
 
 /**
+ * Atomically set g_found_secret if not already set.
+ * Returns true if this thread won the race, false otherwise.
+ * Uses atomic compare-and-swap to prevent race condition (CWE-362).
+ */
+static bool set_found_secret(const char *buffer, size_t len) {
+    char *secret = strndup(buffer, len);
+    if (secret == NULL) {
+        fprintf(stderr, "Error: Memory allocation failed\n");
+        return false;
+    }
+    char *expected = NULL;
+    if (atomic_compare_exchange_strong(&g_found_secret, &expected, secret)) {
+        return true;  // This thread won the race
+    }
+    // Another thread already set it, free our copy
+    free(secret);
+    return false;
+}
+
+/**
  * Try all the combinations of secret starting with letter "starting_letter"
  * and stopping at a maximum length of "max_len"
  * Returns the key when there is a match, otherwise returns NULL
  */
-char *brute_sequential(struct s_thread_data *data)
+void *brute_sequential(void *arg)
 {
+    struct s_thread_data *data = (struct s_thread_data *)arg;
+
     // We set the starting letter
     data->g_buffer[0] = data->starting_letter;
     // Special case for len = 1, we check in this function
     if (check(data, data->g_buffer, 1)) {
         // If this thread found the solution, set the shared global variable
-        // so other threads stop, and stop the current thread. Congrats little
-        // thread!
-        g_found_secret = strndup(data->g_buffer, 1);
-        return g_found_secret;
+        // so other threads stop, and stop the current thread.
+        set_found_secret(data->g_buffer, 1);
+        destroy_thread_data(data);
+        return NULL;
     }
 
     // We start from length 2 (we handled the special case of length 1
@@ -147,16 +199,15 @@ char *brute_sequential(struct s_thread_data *data)
     for (size_t i = 2; i <= data->max_len; ++i) {
       	if (brute_impl(data, data->g_buffer, 1, i)) {
             // If this thread found the solution, set the shared global variable
-            // so other threads stop, and stop the current thread. Congrats little
-            // thread!
-            g_found_secret = strndup(data->g_buffer, i);
-            return g_found_secret;
+            // so other threads stop, and stop the current thread.
+            set_found_secret(data->g_buffer, i);
+            destroy_thread_data(data);
+            return NULL;
         }
     }
 
-   success:
-    
-	return NULL;
+    destroy_thread_data(data);
+    return NULL;
 }
 
 void usage(const char *cmd, const char *alphabet, const size_t max_len, const char *hmac_alg) {
@@ -168,6 +219,11 @@ void usage(const char *cmd, const char *alphabet, const size_t max_len, const ch
 }
 
 int main(int argc, char **argv) {
+
+	if (argc > 1 && strcmp(argv[1], "--version") == 0) {
+		printf("jwtcrack version 1.0.0\n");
+		return 0;
+	}
 
 	const EVP_MD *evp_md;
 	size_t max_len = 6;
@@ -190,13 +246,13 @@ int main(int argc, char **argv) {
 
 	if (argc > 3)
 	{
-		int i3 = atoi(argv[3]);
-		if (i3 > 0)
-		{
-			max_len = i3;
-		} else
-		{
-			printf("Invalid max_len value %s (%d), defaults to %zd\n", argv[3], i3, max_len);
+		char *endptr;
+		errno = 0;
+		long i3 = strtol(argv[3], &endptr, 10);
+		if (errno != 0 || endptr == argv[3] || *endptr != '\0' || i3 <= 0 || i3 > 1000) {
+			printf("Invalid max_len value %s, defaults to %zd (valid range: 1-1000)\n", argv[3], max_len);
+		} else {
+			max_len = (size_t)i3;
 		}
 	}
 
@@ -223,47 +279,122 @@ int main(int argc, char **argv) {
 	g_alphabet_len = strlen(g_alphabet);
 
 	// Split the JWT into header, payload and signature
+	// Validate each part to prevent NULL dereference (CWE-476)
 	g_header_b64 = strtok(jwt, ".");
+	if (g_header_b64 == NULL) {
+		fprintf(stderr, "Error: Invalid JWT format - missing header\n");
+		return 1;
+	}
+
 	g_payload_b64 = strtok(NULL, ".");
+	if (g_payload_b64 == NULL) {
+		fprintf(stderr, "Error: Invalid JWT format - missing payload\n");
+		return 1;
+	}
+
 	g_signature_b64 = strtok(NULL, ".");
+	if (g_signature_b64 == NULL) {
+		fprintf(stderr, "Error: Invalid JWT format - missing signature\n");
+		return 1;
+	}
+
 	g_header_b64_len = strlen(g_header_b64);
 	g_payload_b64_len = strlen(g_payload_b64);
 	g_signature_b64_len = strlen(g_signature_b64);
+
+	// Validate minimum lengths
+	if (g_header_b64_len == 0 || g_payload_b64_len == 0 || g_signature_b64_len == 0) {
+		fprintf(stderr, "Error: Invalid JWT format - empty component\n");
+		return 1;
+	}
 
 	// Recreate the part that is used to create the signature
 	// Since it will always be the same
 	g_to_encrypt_len = g_header_b64_len + 1 + g_payload_b64_len;
 	g_to_encrypt = (unsigned char *) malloc(g_to_encrypt_len + 1);
+	if (g_to_encrypt == NULL) {
+		fprintf(stderr, "Error: Memory allocation failed for g_to_encrypt\n");
+		return 1;
+	}
 	sprintf((char *) g_to_encrypt, "%s.%s", g_header_b64, g_payload_b64);
 
 	// Decode the signature
 	g_signature_len = Base64decode_len((const char *) g_signature_b64);
 	g_signature = malloc(g_signature_len);
+	if (g_signature == NULL) {
+		fprintf(stderr, "Error: Memory allocation failed for g_signature\n");
+		free(g_to_encrypt);
+		return 1;
+	}
 	// We re-assign the length, because Base64decode_len returned us an approximation
 	// of the size so we could malloc safely. But we need the real decoded size, which
 	// is returned by this function
 	g_signature_len = Base64decode((char *) g_signature, (const char *) g_signature_b64);
 
+	// Heap allocate thread data array (fix CWE-121 VLA stack overflow)
+	struct s_thread_data **pointers_data = malloc(g_alphabet_len * sizeof(struct s_thread_data *));
+	if (pointers_data == NULL) {
+		fprintf(stderr, "Error: Memory allocation failed for pointers_data\n");
+		free(g_to_encrypt);
+		free(g_signature);
+		return 1;
+	}
 
-    struct s_thread_data *pointers_data[g_alphabet_len];
-    pthread_t *tid = malloc(g_alphabet_len * sizeof(pthread_t));
+	pthread_t *tid = malloc(g_alphabet_len * sizeof(pthread_t));
+	if (tid == NULL) {
+		fprintf(stderr, "Error: Memory allocation failed for tid\n");
+		free(pointers_data);
+		free(g_to_encrypt);
+		free(g_signature);
+		return 1;
+	}
 
-    for (size_t i = 0; i < g_alphabet_len; i++) {
-        pointers_data[i] = malloc(sizeof(struct s_thread_data));
-        init_thread_data(pointers_data[i], g_alphabet[i], max_len, evp_md);
-        pthread_create(&tid[i], NULL, (void *(*)(void *)) brute_sequential, pointers_data[i]);
-    }
+	size_t threads_created = 0;
+	for (size_t i = 0; i < g_alphabet_len; i++) {
+		pointers_data[i] = malloc(sizeof(struct s_thread_data));
+		if (pointers_data[i] == NULL) {
+			fprintf(stderr, "Error: Memory allocation failed for thread data %zu\n", i);
+			// Clean up already allocated thread data
+			for (size_t j = 0; j < i; j++) {
+				free(pointers_data[j]);
+			}
+			free(pointers_data);
+			free(tid);
+			free(g_to_encrypt);
+			free(g_signature);
+			return 1;
+		}
+		if (init_thread_data(pointers_data[i], g_alphabet[i], max_len, evp_md) != 0) {
+			fprintf(stderr, "Error: Failed to initialize thread data %zu\n", i);
+			free(pointers_data[i]);
+			for (size_t j = 0; j < i; j++) {
+				free(pointers_data[j]);
+			}
+			free(pointers_data);
+			free(tid);
+			free(g_to_encrypt);
+			free(g_signature);
+			return 1;
+		}
+		pthread_create(&tid[i], NULL, brute_sequential, pointers_data[i]);
+		threads_created++;
+	}
 
-    for (size_t i = 0; i < g_alphabet_len; i++)
-        pthread_join(tid[i], NULL);
+	for (size_t i = 0; i < threads_created; i++)
+		pthread_join(tid[i], NULL);
 
 	if (g_found_secret == NULL)
 		printf("No solution found :-(\n");
 	else
 		printf("Secret is \"%s\"\n", g_found_secret);
 
-    free(g_found_secret);
-    free(tid);
+	for (size_t i = 0; i < g_alphabet_len; i++)
+		free(pointers_data[i]);
+	free(pointers_data);
+	free(g_found_secret);
+	free(tid);
+	free(g_to_encrypt);
+	free(g_signature);
 
 	return 0;
 }

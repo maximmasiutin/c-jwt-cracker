@@ -16,6 +16,17 @@ docker build . -t jwtcrack
 docker run -it --rm  jwtcrack eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWV9.cAOIAifu3fykvhkHpbuhbvtH807-Z2rI1FS3vX1XMjE
 ```
 
+## Testing with Docker
+
+Build and run the test image which includes Valgrind for memory leak detection:
+
+```
+docker build -f Dockerfile.test -t jwtcrack-test .
+docker run --rm jwtcrack-test
+```
+
+This runs a functional test with 20 threads and a Valgrind memory check.
+
 ## Manual Compilation
 
 Make sure you have openssl's headers installed.
@@ -78,6 +89,6 @@ $ > ./jwtcrack eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzM4NCJ9.eyJyb2xlIjoiYWRtaW4ifQ.31xCH
 ## IMPORTANT: Known bugs
 
 The base64 implementation I use (from Apple) is sometimes buggy because not every Base64 implementation is the same.
-So sometimes, decrypting of your Base64 token will only work partially and thus you will be able to find a secret to your token that is not the correct one.
+So sometimes, decrypting your Base64 token will only work partially and thus you will be able to find a secret to your token that is not the correct one.
 
 If someone is willing to implement a more robust Base64 implementation, that would be great :)
