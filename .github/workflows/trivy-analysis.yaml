@@ -9,6 +9,8 @@ on:
   pull_request:
   workflow_dispatch:
   push:
+  schedule:
+    - cron: '0 0 1 */3 *'
 
 env:
   SARIF_FILE: 'trivy-results.sarif'
@@ -24,7 +26,7 @@ jobs:
       - name: Run Trivy vulnerability scanner on the cloned repository files
         uses: aquasecurity/trivy-action@0.33.1
         with:
-          version: 'v0.67.0'
+          version: 'v0.67.2'
           scan-type: 'fs'
           scanners: 'vuln,misconfig,secret,license'
           ignore-unfixed: true
@@ -41,7 +43,7 @@ jobs:
           ls -lash ${{ env.SARIF_FILE }}
           
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@v4.31.6
         with:
           sarif_file: ${{ env.SARIF_FILE }}
 
