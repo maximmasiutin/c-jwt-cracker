@@ -80,6 +80,25 @@ make re       # full rebuild
 
 ## Docker
 
+### Pre-built Image from DockerHub
+
+Pull the optimized image:
+```
+docker pull maximmasiutin/c-jwt-cracker:latest
+```
+
+**CPU Requirements:** x86-64-v4 architecture (AVX-512 capable). Compatible with:
+- Intel Xeon Scalable 4th Gen+ (Sapphire Rapids)
+- Intel Core 11th Gen+ with AVX-512 support
+- AMD EPYC 4th Gen (Genoa) with AVX-512
+
+Run:
+```
+docker run -it --rm maximmasiutin/c-jwt-cracker <token> [alphabet] [max_len] [hmac_alg]
+```
+
+### Build from Source
+
 Build:
 ```
 docker build . -t jwtcrack
