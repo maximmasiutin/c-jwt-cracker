@@ -1,4 +1,4 @@
-FROM alpine:latest AS builder
+FROM alpine:3.21.2 AS builder
 
 RUN apk update && apk upgrade --no-cache && apk add --quiet --no-cache gcc musl-dev openssl-dev make
 
@@ -10,7 +10,7 @@ WORKDIR /opt/src
 # Build with native CPU optimizations (Intel Xeon w5-2445 / Sapphire Rapids / x86-64-v4)
 RUN make CFLAGS="-I /usr/include/openssl -g -std=gnu99 -O3 -march=native -mtune=native"
 
-FROM alpine:latest
+FROM alpine:3.21.2
 
 # CPU Requirements: x86-64-v4 (AVX-512 capable)
 # Optimized for: Intel Xeon w5-2445 (Sapphire Rapids)

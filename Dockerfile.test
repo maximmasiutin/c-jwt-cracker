@@ -1,6 +1,6 @@
-FROM frolvlad/alpine-gcc:latest
-# Update packages to get latest security fixes for OpenSSL (CVE-2025-9230, CVE-2025-9231, CVE-2025-9232)
-RUN apk update && apk upgrade --no-cache && apk add --quiet --no-cache libressl-dev make valgrind bash coreutils
+FROM alpine:3.21.2
+# Update packages to get latest security fixes
+RUN apk update && apk upgrade --no-cache && apk add --quiet --no-cache gcc musl-dev libressl-dev make valgrind bash coreutils
 
 # Create non-root user for security (AVD-DS-0002)
 RUN addgroup -S testgroup && adduser -S testuser -G testgroup
