@@ -1,4 +1,4 @@
-FROM alpine:3.21.2 AS builder
+FROM alpine:latest AS builder
 
 RUN apk update && apk upgrade --no-cache && apk add --quiet --no-cache gcc musl-dev openssl-dev make
 

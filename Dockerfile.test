@@ -1,4 +1,4 @@
-FROM alpine:3.21.2
+FROM alpine:latest
 # Update packages to get latest security fixes
 RUN apk update && apk upgrade --no-cache && apk add --quiet --no-cache gcc musl-dev libressl-dev make valgrind bash coreutils
 
