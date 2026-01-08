@@ -2,6 +2,16 @@
 
 Multi-threaded JWT brute-force cracker in C. Tests all possible secret keys using HMAC verification against the token signature. For security testing only.
 
+## Purpose
+
+This tool is designed for **authorized security testing** to identify weak JWT secrets. Its explicit purpose is to recover and display the HMAC secret key used to sign a JWT token. Security scanners may flag the output of the discovered secret as "sensitive information logging" (CWE-200, CWE-312), but this is intentional and expected behavior - the entire point of the tool is to find and report weak secrets so they can be replaced with stronger ones.
+
+**Intended use cases:**
+- Penetration testing engagements (with authorization)
+- Security audits of JWT implementations
+- Verifying that production secrets are not weak or guessable
+- Educational purposes and CTF challenges
+
 Uses modified [Apple Base64 implementation](https://opensource.apple.com/source/QuickTimeStreamingServer/QuickTimeStreamingServer-452/CommonUtilitiesLib/base64.c) with Base64URL support.
 
 ## Usage

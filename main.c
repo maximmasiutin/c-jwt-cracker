@@ -386,6 +386,13 @@ int main(int argc, char **argv) {
 	if (g_found_secret == NULL)
 		printf("No solution found :-(\n");
 	else
+		/*
+		 * SECURITY NOTE: Outputting the discovered secret is the explicit
+		 * purpose of this security testing tool. Static analyzers may flag
+		 * this as "sensitive information logging" (CWE-200, CWE-312), but
+		 * this is intentional - the tool exists to find weak JWT secrets
+		 * so they can be identified and replaced with stronger ones.
+		 */
 		printf("Secret is \"%s\"\n", g_found_secret);
 
 	for (size_t i = 0; i < g_alphabet_len; i++)
