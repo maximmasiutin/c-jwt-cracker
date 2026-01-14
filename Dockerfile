@@ -10,7 +10,7 @@ WORKDIR /opt/src
 # Build with native CPU optimizations (Intel Xeon w5-2445 / Sapphire Rapids / x86-64-v4)
 RUN make CFLAGS="-I /usr/include/openssl -g -std=gnu99 -O3 -march=native -mtune=native"
 
-FROM alpine:3.21.2
+FROM alpine:3.23.2
 
 # CPU Requirements: x86-64-v4 (AVX-512 capable)
 # Optimized for: Intel Xeon w5-2445 (Sapphire Rapids)
