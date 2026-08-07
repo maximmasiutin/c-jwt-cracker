@@ -1,0 +1,11 @@
+# Trivy ignore rules. The scanner workflow
+# .github/workflows/trivy-analysis.yaml passes this file to the trivy-action
+# through its `trivyignores` input, so the rules below apply to the CI fs scan.
+misconfigurations:
+  # AVD-DS-0026: a Dockerfile should declare a HEALTHCHECK. Dockerfile.test
+  # builds the binary, runs the Valgrind security test once and exits, so a
+  # container healthcheck has nothing to poll. Scoped to that file, so the
+  # runtime Dockerfile, which does declare a HEALTHCHECK, is still checked.
+  - id: AVD-DS-0026
+    paths:
+      - "Dockerfile.test"
