@@ -17,6 +17,7 @@ see the "README.md" file for more details.
 #include <stdbool.h>
 #include <pthread.h>
 #include "base64.h"
+#include "compat.h"
 
 char *g_header_b64 = NULL; // Holds the Base64 header of the original JWT
 char *g_payload_b64 = NULL; // Holds the Base64 payload of the original JWT
